@@ -70,10 +70,10 @@ void resetEncoder(void); //function to reset encoder values when polling stops
 #define SLAVE0_ID 0x256
 
 //store the ID of the current slave node, change this when uploading
-#define SLAVE_ID 0x260 //0x551 //0x552 //0x553
+#define SLAVE_ID 0x256 //0x256 //0x257 //0x258
 
 //how many pulses are seen on 1 full rotation
-#define MAX_COUNT 3800
+#define MAX_COUNT 1430
 
 
 CAN_RxHeaderTypeDef RxHeader;
@@ -82,18 +82,34 @@ uint8_t RxData[8];
 uint8_t TxData[8];
 uint32_t TxMailbox;
 
+
+//define prefix commands to set up CAN communication
 uint8_t sysCheck=0; //000 -> 0
-uint8_t polling=7; //111->7
-uint8_t stopPoll=5; //101->5
+uint8_t polling=7; //111-> 7
+uint8_t stopPoll=5; //101-> 5
+uint8_t reset=1; //001 -> 1
+uint8_t PID_hold = 3; //011 -> 3
+
+//uint32_t encoderReset = 1000000000; //to prevent overflow, we set the initial position
+
 
 //define variables for storing encoder values
 uint32_t currentEnc=0;
 uint32_t previousEnc=0; //to calculate velocity
 int16_t diff=0;
 int32_t pos=0; //absolute position with accuracy of 6'
-int16_t angPos=0; //angular position
+//int16_t angPos=0; //angular position
 uint8_t PWM=0;
 uint8_t DIR=0; //PWM and DIR pins for motor direction and speed
+
+
+
+// of the motors to a large value about which it can freely deviate
+
+//mapping to arm -> shoulder,elbow,base,wrist1,wrist2,gripper
+//arm degrees -> 90, 0, 50%, _, _, _
+uint16_t resetPos[]={8660, 0, 59600, 5000, 5000, 5000}; //max count for each node to calculate angular position
+//uint32_t home[]={0,0,0,0,0,0};
 
 //powering up the brake releases it
 //GPIO_PIN_RESET -> 1 -> pin HIGH
@@ -109,6 +125,12 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
+	//set the values to oscillate about this large value (no overflow)
+//	for (uint8_t i=0;i<6;i++)
+//	{
+//		home[i] = resetPos[i] + encoderReset;
+//	}
+
 
   /* USER CODE END 1 */
 
@@ -144,6 +166,8 @@ int main(void)
   //start TIM4 in encoder mode to read the encoder pulses in 4x mode
   HAL_TIM_Encoder_Start(&htim4, TIM_CHANNEL_ALL);
 
+  //reset the encoders at the start
+  resetEncoder();
 
   TxHeader.IDE=CAN_ID_STD;
   TxHeader.RTR=CAN_RTR_DATA;
@@ -331,15 +355,18 @@ static void MX_TIM4_Init(void)
   /* USER CODE END TIM4_Init 1 */
   htim4.Instance = TIM4;
   htim4.Init.Prescaler = 0;
-  htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim4.Init.Period = 3800;
+  if (SLAVE_ID-SLAVE0_ID == 1) //shoulder node needs to count down
+	  htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
+  else
+	  htim4.Init.CounterMode = TIM_COUNTERMODE_DOWN;
+  htim4.Init.Period = 65535;
   htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   sConfig.EncoderMode = TIM_ENCODERMODE_TI12;
   sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
   sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
   sConfig.IC1Prescaler = TIM_ICPSC_DIV1;
-  sConfig.IC1Filter = 10;
+  sConfig.IC1Filter = 15;
   sConfig.IC2Polarity = TIM_ICPOLARITY_RISING;
   sConfig.IC2Selection = TIM_ICSELECTION_DIRECTTI;
   sConfig.IC2Prescaler = TIM_ICPSC_DIV1;
@@ -427,25 +454,30 @@ void HAL_CAN_RxFifo1MsgPendingCallback(CAN_HandleTypeDef *hcan1)
 
 	if (RxHeader.DLC==3 && address==SLAVE_ID-SLAVE0_ID) //polling mode will send 3 bytes of data now
 	{
-		if (command==polling)
+		if (command==polling || command == PID_hold)
 		{
 			//set PWM and direction pins
 			PWM=RxData[1];
 			DIR=RxData[2];
 			TIM2->CCR4=PWM; //set the duty cycle as an 8 bit value that is received
 
+			if (command == polling){
 			if (PWM > 0)
 				HAL_GPIO_WritePin(Brake_GPIO_Port, Brake_Pin, GPIO_PIN_SET); //set the pin high to open the brake
 			else
 				HAL_GPIO_WritePin(Brake_GPIO_Port, Brake_Pin, GPIO_PIN_RESET); //activate the brake if no command is given
-
+			}
+			else
+			{
+				HAL_GPIO_WritePin(Brake_GPIO_Port, Brake_Pin, GPIO_PIN_RESET); //activate the brake if no command is given
+			}
 			//set the direction pin
 			HAL_GPIO_WritePin(DIR_GPIO_Port, DIR_Pin,DIR); //set the initial value of DIR
 
 			//extract information about encoder and send to master node
-			TxHeader.DLC=8; //send 8 bytes of data for encoder input
+			TxHeader.DLC=6; //send 6 bytes of data for encoder input
 
-			currentEnc=TIM4->CNT; //get the current count of encoder
+			currentEnc=TIM4->CNT; //get the current count of encoder and remove offset
 			if (currentEnc==previousEnc)
 				diff=0; //no change in velocity
 			else if (currentEnc>previousEnc)
@@ -476,14 +508,14 @@ void HAL_CAN_RxFifo1MsgPendingCallback(CAN_HandleTypeDef *hcan1)
 			uint8_t b2 = (pos>>8)&0xFF;
 			uint8_t b3 = (pos)&0xFF;
 
-			//extracting bytes for angular position
-			angPos=round((3600.0*currentEnc)/MAX_COUNT);
+			/*//extracting bytes for angular position
+			angPos=round((3600.0*currentEnc)/(double)MAX_COUNT);
 			uint8_t b4 = (angPos>>8)&0xFF;
-			uint8_t b5 = (angPos)&0xFF;
+			uint8_t b5 = (angPos)&0xFF;*/
 
 			//extracting bytes for difference in encoder values
-			uint8_t b6 = (diff>>8)&0XFF;
-			uint8_t b7 = (diff)&0xFF;
+			uint8_t b4 = (diff>>8)&0XFF;
+			uint8_t b5 = (diff)&0xFF;
 
 			//preparing data for transmission
 			TxData[0]=b0;
@@ -492,8 +524,6 @@ void HAL_CAN_RxFifo1MsgPendingCallback(CAN_HandleTypeDef *hcan1)
 			TxData[3]=b3;
 			TxData[4]=b4;
 			TxData[5]=b5;
-			TxData[6]=b6;
-			TxData[7]=b7;
 
 			//send the CAN message
 			if (HAL_CAN_AddTxMessage(&hcan, &TxHeader, TxData, &TxMailbox) != HAL_OK)
@@ -509,10 +539,12 @@ void HAL_CAN_RxFifo1MsgPendingCallback(CAN_HandleTypeDef *hcan1)
 
 	if (RxHeader.DLC==1 && address==SLAVE_ID-SLAVE0_ID)
 	{
+		HAL_GPIO_WritePin(Brake_GPIO_Port, Brake_Pin, GPIO_PIN_RESET); //activate the brake if no command is given
+
 		//perform the systems check of CAN nodes
 		if (command==sysCheck)
 		{
-			HAL_GPIO_WritePin(Brake_GPIO_Port, Brake_Pin, GPIO_PIN_SET); //close the brake when not moving
+			//HAL_GPIO_WritePin(Brake_GPIO_Port, Brake_Pin, GPIO_PIN_SET); //close the brake when not moving
 
 			TxHeader.DLC=1; //send 1 byte of data as a systems check
 			TxData[0]=RxData[0];
@@ -522,6 +554,11 @@ void HAL_CAN_RxFifo1MsgPendingCallback(CAN_HandleTypeDef *hcan1)
 			{
 				Error_Handler ();
 			}
+		}
+
+		if (command==reset)
+		{
+			resetEncoder(); //reset the encoders when button is pressed
 		}
 
 		/*if (command==stopPoll)
@@ -543,11 +580,12 @@ void HAL_CAN_RxFifo1MsgPendingCallback(CAN_HandleTypeDef *hcan1)
 void resetEncoder()
 {
 	//reset all the values for encoder data sharing
-	currentEnc=0;
-	previousEnc=0;
+	// EXECUTE THE COMMAND ONLY AFTER MOVING TO HOME POSITION
+	currentEnc=resetPos[SLAVE_ID - SLAVE0_ID];
+	previousEnc=resetPos[SLAVE_ID - SLAVE0_ID];
 	diff=0;
-	pos=0;
-	angPos=0;
+	pos=resetPos[SLAVE_ID - SLAVE0_ID];
+	//angPos=0;
 	TIM4->CNT=0; //reset the counter
 }
 
