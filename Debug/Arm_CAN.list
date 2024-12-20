@@ -159,7 +159,7 @@ int main(void)
  80001aa:	60da      	str	r2, [r3, #12]
   TxHeader.StdId=SLAVE_ID; // ID of this CAN node
  80001ac:	4b07      	ldr	r3, [pc, #28]	@ (80001cc <main+0x80>)
- 80001ae:	f240 2256 	movw	r2, #598	@ 0x256
+ 80001ae:	f44f 7216 	mov.w	r2, #600	@ 0x258
  80001b2:	601a      	str	r2, [r3, #0]
 
   /* USER CODE END 2 */
@@ -594,11 +594,11 @@ static void MX_TIM4_Init(void)
  8000410:	2200      	movs	r2, #0
  8000412:	605a      	str	r2, [r3, #4]
   if (SLAVE_ID-SLAVE0_ID == 1) //shoulder node needs to count down
-	  htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
-  else
 	  htim4.Init.CounterMode = TIM_COUNTERMODE_DOWN;
+  else
+	  htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
  8000414:	4b1d      	ldr	r3, [pc, #116]	@ (800048c <MX_TIM4_Init+0xa0>)
- 8000416:	2210      	movs	r2, #16
+ 8000416:	2200      	movs	r2, #0
  8000418:	609a      	str	r2, [r3, #8]
   htim4.Init.Period = 65535;
  800041a:	4b1c      	ldr	r3, [pc, #112]	@ (800048c <MX_TIM4_Init+0xa0>)
@@ -886,7 +886,7 @@ void HAL_CAN_RxFifo1MsgPendingCallback(CAN_HandleTypeDef *hcan1)
  80005d8:	2b03      	cmp	r3, #3
  80005da:	f040 8106 	bne.w	80007ea <HAL_CAN_RxFifo1MsgPendingCallback+0x24e>
  80005de:	7bbb      	ldrb	r3, [r7, #14]
- 80005e0:	2b00      	cmp	r3, #0
+ 80005e0:	2b02      	cmp	r3, #2
  80005e2:	f040 8102 	bne.w	80007ea <HAL_CAN_RxFifo1MsgPendingCallback+0x24e>
 	{
 		if (command==polling || command == PID_hold)
@@ -1200,7 +1200,7 @@ void HAL_CAN_RxFifo1MsgPendingCallback(CAN_HandleTypeDef *hcan1)
  80007ee:	2b01      	cmp	r3, #1
  80007f0:	d12b      	bne.n	800084a <HAL_CAN_RxFifo1MsgPendingCallback+0x2ae>
  80007f2:	7bbb      	ldrb	r3, [r7, #14]
- 80007f4:	2b00      	cmp	r3, #0
+ 80007f4:	2b02      	cmp	r3, #2
  80007f6:	d128      	bne.n	800084a <HAL_CAN_RxFifo1MsgPendingCallback+0x2ae>
 	{
 		HAL_GPIO_WritePin(Brake_GPIO_Port, Brake_Pin, GPIO_PIN_RESET); //activate the brake if no command is given
@@ -1294,13 +1294,13 @@ void resetEncoder()
 	// EXECUTE THE COMMAND ONLY AFTER MOVING TO HOME POSITION
 	currentEnc=resetPos[SLAVE_ID - SLAVE0_ID];
  8000894:	4b0c      	ldr	r3, [pc, #48]	@ (80008c8 <resetEncoder+0x38>)
- 8000896:	881b      	ldrh	r3, [r3, #0]
+ 8000896:	889b      	ldrh	r3, [r3, #4]
  8000898:	461a      	mov	r2, r3
  800089a:	4b0c      	ldr	r3, [pc, #48]	@ (80008cc <resetEncoder+0x3c>)
  800089c:	601a      	str	r2, [r3, #0]
 	previousEnc=resetPos[SLAVE_ID - SLAVE0_ID];
  800089e:	4b0a      	ldr	r3, [pc, #40]	@ (80008c8 <resetEncoder+0x38>)
- 80008a0:	881b      	ldrh	r3, [r3, #0]
+ 80008a0:	889b      	ldrh	r3, [r3, #4]
  80008a2:	461a      	mov	r2, r3
  80008a4:	4b0a      	ldr	r3, [pc, #40]	@ (80008d0 <resetEncoder+0x40>)
  80008a6:	601a      	str	r2, [r3, #0]
@@ -1310,7 +1310,7 @@ void resetEncoder()
  80008ac:	801a      	strh	r2, [r3, #0]
 	pos=resetPos[SLAVE_ID - SLAVE0_ID];
  80008ae:	4b06      	ldr	r3, [pc, #24]	@ (80008c8 <resetEncoder+0x38>)
- 80008b0:	881b      	ldrh	r3, [r3, #0]
+ 80008b0:	889b      	ldrh	r3, [r3, #4]
  80008b2:	461a      	mov	r2, r3
  80008b4:	4b08      	ldr	r3, [pc, #32]	@ (80008d8 <resetEncoder+0x48>)
  80008b6:	601a      	str	r2, [r3, #0]
